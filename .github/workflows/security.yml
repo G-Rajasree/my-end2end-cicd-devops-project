@@ -25,9 +25,12 @@ jobs:
 
       - name: Run OWASP Dependency Check
         working-directory: github-trending
+        env:
+          NVD_API_KEY: ${{ secrets.NVD_API_KEY }}
         run: |
           mvn org.owasp:dependency-check-maven:check \
-            -DfailBuildOnCVSS=9 || true
+            -DfailBuildOnCVSS=9 \
+            -DnvdApiKey=${{ secrets.NVD_API_KEY }} || true
 
       - name: Upload Dependency Check Report
         uses: actions/upload-artifact@v4
