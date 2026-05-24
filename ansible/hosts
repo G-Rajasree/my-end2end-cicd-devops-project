@@ -1,0 +1,18 @@
+# UPDATE THESE IPs after running: terraform output jenkins_master_ip
+# Use the PUBLIC IPs from terraform output, not private IPs
+
+[jenkins-master]
+<JENKINS_MASTER_PUBLIC_IP>
+
+[jenkins-master:vars]
+ansible_user=ubuntu
+ansible_ssh_private_key_file=~/.ssh/dpp.pem
+ansible_ssh_common_args='-o StrictHostKeyChecking=no'
+
+[jenkins-slave]
+<BUILD_SLAVE_PUBLIC_IP>
+
+[jenkins-slave:vars]
+ansible_user=ubuntu
+ansible_ssh_private_key_file=~/.ssh/dpp.pem
+ansible_ssh_common_args='-o StrictHostKeyChecking=no'

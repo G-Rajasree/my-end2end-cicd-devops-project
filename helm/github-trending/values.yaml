@@ -1,0 +1,43 @@
+replicaCount: 1
+
+image:
+  repository: galaxy01.jfrog.io/galaxy-docker-local/github-trending
+  pullPolicy: Always
+  tag: "latest"
+
+imagePullSecrets:
+  - name: jfrogcred
+
+namespace: galaxy
+
+service:
+  type: LoadBalancer
+  port: 80
+  targetPort: 8000
+  annotations:
+    service.beta.kubernetes.io/aws-load-balancer-type: "nlb"
+
+resources:
+  requests:
+    cpu: "250m"
+    memory: "512Mi"
+  limits:
+    cpu: "500m"
+    memory: "768Mi"
+
+hpa:
+  minReplicas: 1
+  maxReplicas: 3
+  targetCPUUtilizationPercentage: 70
+
+livenessProbe:
+  initialDelaySeconds: 60
+  periodSeconds: 10
+  failureThreshold: 3
+
+readinessProbe:
+  initialDelaySeconds: 40
+  periodSeconds: 5
+  failureThreshold: 3
+
+buildNumber: "0"

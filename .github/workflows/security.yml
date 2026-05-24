@@ -1,0 +1,68 @@
+name: Security Scan
+
+on:
+  push:
+    branches: [ main, master ]
+  schedule:
+    - cron: '0 6 * * 1'  # Every Monday at 6am
+
+jobs:
+
+  dependency-check:
+    name: OWASP Dependency Check
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Java 21
+        uses: actions/setup-java@v4
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+          cache: maven
+
+      - name: Run OWASP Dependency Check
+        working-directory: github-trending
+        run: |
+          mvn org.owasp:dependency-check-maven:check \
+            -DfailBuildOnCVSS=9 || true
+
+      - name: Upload Dependency Check Report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: dependency-check-report
+          path: github-trending/target/dependency-check-report.html
+
+  trivy-scan:
+    name: Trivy Docker Image Scan
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Java 21
+        uses: actions/setup-java@v4
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+          cache: maven
+
+      - name: Build JAR
+        working-directory: github-trending
+        run: mvn clean package -Dmaven.test.skip=true
+
+      - name: Build Docker image
+        working-directory: github-trending
+        run: docker build -t galaxy-devops:scan .
+
+      - name: Run Trivy vulnerability scan
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: galaxy-devops:scan
+          format: table
+          exit-code: '0'
+          severity: CRITICAL,HIGH

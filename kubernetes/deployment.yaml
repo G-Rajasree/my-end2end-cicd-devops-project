@@ -1,0 +1,51 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: github-trending
+  namespace: galaxy
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: github-trending
+  template:
+    metadata:
+      labels:
+        app: github-trending
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/path: "/actuator/prometheus"
+        prometheus.io/port: "8000"
+    spec:
+      imagePullSecrets:
+      - name: jfrogcred
+      containers:
+      - name: github-trending
+        image: galaxy01.jfrog.io/galaxy-docker-local/github-trending:IMAGE_TAG
+        imagePullPolicy: Always
+        ports:
+        - containerPort: 8000
+        env:
+        - name: BUILD_NUMBER
+          value: "BUILD_TAG"
+        resources:
+          requests:
+            cpu: "250m"
+            memory: "512Mi"
+          limits:
+            cpu: "500m"
+            memory: "768Mi"
+        livenessProbe:
+          httpGet:
+            path: /actuator/health
+            port: 8000
+          initialDelaySeconds: 60
+          periodSeconds: 10
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /actuator/health
+            port: 8000
+          initialDelaySeconds: 40
+          periodSeconds: 5
+          failureThreshold: 3

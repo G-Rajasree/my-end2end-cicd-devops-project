@@ -1,0 +1,152 @@
+def registry  = 'https://galaxy01.jfrog.io'
+def imageName = 'galaxy01.jfrog.io/galaxy-docker-local/github-trending'
+def appDir    = 'github-trending'
+
+pipeline {
+    agent {
+        node {
+            label 'maven-agent'
+        }
+    }
+
+    environment {
+        PATH    = "/opt/apache-maven-3.9.16/bin:$PATH"
+        VERSION = "2.1.${BUILD_NUMBER}"
+    }
+
+    stages {
+
+        stage('Build') {
+            steps {
+                dir(appDir) {
+                    echo '---------- Build Started ----------'
+                    sh 'mvn clean package -Dmaven.test.skip=true'
+                    echo '---------- Build Completed ----------'
+                }
+            }
+        }
+
+        stage('Unit Test') {
+            steps {
+                dir(appDir) {
+                    echo '---------- Unit Test Started ----------'
+                    sh 'mvn surefire-report:report'
+                    echo '---------- Unit Test Completed ----------'
+                }
+            }
+            post {
+                always {
+                    junit "${appDir}/**/target/surefire-reports/*.xml"
+                }
+            }
+        }
+
+        stage('SonarQube Analysis') {
+            environment {
+                scannerHome = tool 'galaxy-SonarScanner'
+            }
+            steps {
+                dir(appDir) {
+                    echo '---------- Sonar Analysis Started ----------'
+                    withSonarQubeEnv('galaxy-SonarQube-Server') {
+                        sh "${scannerHome}/bin/sonar-scanner"
+                    }
+                    echo '---------- Sonar Analysis Completed ----------'
+                }
+            }
+        }
+
+        stage('Quality Gate') {
+            steps {
+                timeout(time: 1, unit: 'HOURS') {
+                    script {
+                        def qg = waitForQualityGate()
+                        if (qg.status != 'OK') {
+                            error "Pipeline aborted due to quality gate failure: ${qg.status}"
+                        }
+                    }
+                }
+            }
+        }
+
+        stage('Jar Publish') {
+            steps {
+                dir(appDir) {
+                    script {
+                        echo '---------- Jar Publish Started ----------'
+                        def server     = Artifactory.newServer url: registry + "/artifactory", credentialsId: "artifactory_token"
+                        def properties = "buildid=${BUILD_NUMBER},commitid=${GIT_COMMIT}"
+                        def uploadSpec = """{
+                            "files": [{
+                                "pattern": "target/github-trending-*.jar",
+                                "target": "libs-release-local/com/galaxy/github-trending/${env.VERSION}/",
+                                "props": "${properties}"
+                            }]
+                        }"""
+                        def buildInfo = server.upload(uploadSpec)
+                        buildInfo.env.collect()
+                        server.publishBuildInfo(buildInfo)
+                        echo '---------- Jar Publish Completed ----------'
+                    }
+                }
+            }
+        }
+
+        stage('Docker Build') {
+            steps {
+                dir(appDir) {
+                    script {
+                        echo '---------- Docker Build Started ----------'
+                        app = docker.build(imageName + ":" + env.VERSION)
+                        echo '---------- Docker Build Completed ----------'
+                    }
+                }
+            }
+        }
+
+        stage('Docker Publish') {
+            steps {
+                script {
+                    echo '---------- Docker Publish Started ----------'
+                    docker.withRegistry(registry, 'artifactory_token') {
+                        app.push(env.VERSION)
+                        app.push('latest')
+                    }
+                    echo '---------- Docker Publish Completed ----------'
+                }
+            }
+        }
+
+        stage('Deploy to EKS') {
+            steps {
+                script {
+                    echo '---------- Deploying to EKS via Helm ----------'
+                    sh """
+                        helm upgrade --install github-trending helm/github-trending \\
+                            --namespace galaxy \\
+                            --create-namespace \\
+                            --set image.tag=${env.VERSION} \\
+                            --set buildNumber=${BUILD_NUMBER} \\
+                            --atomic \\
+                            --timeout 3m \\
+                            --wait
+                    """
+                    echo '---------- Deployment Completed ----------'
+                }
+            }
+        }
+    }
+
+    post {
+        success {
+            echo "SUCCESS - Helm release github-trending deployed with image: ${imageName}:${env.VERSION}"
+        }
+        failure {
+            echo "FAILED - Rolling back Helm release if it exists..."
+            sh 'helm rollback github-trending 0 --namespace galaxy || true'
+        }
+        always {
+            cleanWs()
+        }
+    }
+}

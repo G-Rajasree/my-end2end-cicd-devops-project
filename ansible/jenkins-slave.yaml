@@ -1,0 +1,83 @@
+---
+- hosts: jenkins-slave
+  become: true
+  tasks:
+
+  - name: Update apt cache
+    apt:
+      update_cache: yes
+      force_apt_get: yes
+      cache_valid_time: 3600
+
+  - name: Install Java
+    apt:
+      name: openjdk-21-jre
+      state: present
+
+  - name: Download Maven
+    get_url:
+      url: https://dlcdn.apache.org/maven/maven-3/3.9.16/binaries/apache-maven-3.9.16-bin.tar.gz
+      dest: /opt/apache-maven-3.9.16-bin.tar.gz
+
+  - name: Extract Maven
+    unarchive:
+      src: /opt/apache-maven-3.9.16-bin.tar.gz
+      dest: /opt
+      remote_src: yes
+
+  - name: Install Docker
+    apt:
+      name: docker.io
+      state: present
+
+  - name: Start and enable Docker
+    service:
+      name: docker
+      state: started
+      enabled: yes
+
+  - name: Set Docker socket permissions
+    file:
+      path: /var/run/docker.sock
+      state: file
+      mode: '0660'
+      group: docker
+
+  - name: Install curl and apt-transport-https
+    apt:
+      name:
+        - curl
+        - apt-transport-https
+        - gnupg
+      state: present
+
+  - name: Download kubectl
+    get_url:
+      url: https://dl.k8s.io/release/v1.29.0/bin/linux/amd64/kubectl
+      dest: /usr/local/bin/kubectl
+      mode: '0755'
+
+  - name: Install Helm
+    shell: |
+      curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
+    args:
+      creates: /usr/local/bin/helm
+
+  - name: Install AWS CLI
+    shell: |
+      curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o /tmp/awscliv2.zip
+      apt-get install -y unzip
+      unzip -o /tmp/awscliv2.zip -d /tmp
+      /tmp/aws/install --update
+    args:
+      creates: /usr/local/bin/aws
+
+  - name: Add jenkins user to docker group
+    user:
+      name: jenkins
+      groups: docker
+      append: yes
+
+  # NOTE: Run this manually on build-slave AFTER terraform apply creates the EKS cluster
+  # (Step 5 in README):
+  #   sudo -u jenkins aws eks update-kubeconfig --region us-east-1 --name galaxy-eks-01
